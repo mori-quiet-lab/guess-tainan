@@ -58,6 +58,9 @@
   .hint{position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:4;
     font-style:italic;font-size:15px;color:var(--parch);opacity:.85;pointer-events:none;
     text-shadow:0 2px 8px rgba(0,0,0,.7)}
+  .hint.error{padding:10px 14px;border:1px solid rgba(165,57,43,.65);border-radius:6px;
+    background:rgba(14,26,38,.86);color:#ffe0d8;opacity:1;font-family:var(--mono);
+    font-style:normal;font-size:12px;text-align:center;max-width:min(720px,92vw)}
 
   /* ---- guess instrument ---- */
   .panel{position:fixed;right:var(--ww-edge);bottom:var(--ww-map-bottom);width:var(--ww-map-width);
@@ -258,13 +261,13 @@
 
 /* --- 回合資料：真值 = 計分標準答案 --- */
 const ROUNDS = [
-  {name:"熱蘭遮城初建", place:"安平古堡／熱蘭遮城遺址", period:"荷蘭東印度公司在大員設立據點", lat:23.0016, lng:120.1607, year:1624, era:"荷治時期", scene:"fort_zeelandia", panoramaUrl:"assets/panos_hd/fort_zeelandia_1624.jpg"},
-  {name:"鄭成功登陸鹿耳門", place:"鹿耳門水道／台江內海一帶", period:"鄭成功渡臺攻荷", lat:23.0640, lng:120.1290, year:1661, era:"明鄭時期", scene:"luermen", panoramaUrl:"assets/panos_hd/luermen_landing_1661.jpg"},
-  {name:"臺南孔子廟創建", place:"臺南孔子廟", period:"全臺首學創立", lat:22.9901, lng:120.2041, year:1665, era:"明鄭時期", scene:"confucius", panoramaUrl:"assets/panos_hd/confucius_temple_1665.jpg"},
-  {name:"億載金城建成", place:"二鯤鯓砲臺／億載金城", period:"沈葆楨籌防臺灣海防", lat:22.9885, lng:120.1602, year:1876, era:"清領時期", scene:"golden_castle", panoramaUrl:"assets/panos_hd/eternal_golden_castle_1876.jpg"},
-  {name:"西來庵事件", place:"西來庵／噍吧哖事件歷史場域", period:"噍吧哖事件／余清芳事件", lat:23.1235, lng:120.4620, year:1915, era:"日治時期", scene:"xilai", panoramaUrl:"assets/panos_hd/xilai_temple_incident_1915.jpg"},
-  {name:"烏山頭水庫與嘉南大圳完工", place:"烏山頭水庫／八田與一紀念園區", period:"嘉南平原水利工程", lat:23.2040, lng:120.3610, year:1930, era:"日治時期", scene:"wushantou", panoramaUrl:"assets/panos_hd/wushantou_reservoir_1930.jpg"},
-  {name:"林百貨開幕", place:"林百貨／末廣町", period:"臺南現代都市文化", lat:22.9913, lng:120.2026, year:1932, era:"日治時期", scene:"hayashi", panoramaUrl:"assets/panos_hd/hayashi_department_store_1932.jpg"},
+  {name:"熱蘭遮城初建", place:"安平古堡／熱蘭遮城遺址", period:"荷蘭東印度公司在大員設立據點", lat:23.0016, lng:120.1607, year:1624, era:"荷治時期", scene:"fort_zeelandia", panoramaUrl:"fort_zeelandia_1624.jpg"},
+  {name:"鄭成功登陸鹿耳門", place:"鹿耳門水道／台江內海一帶", period:"鄭成功渡臺攻荷", lat:23.0640, lng:120.1290, year:1661, era:"明鄭時期", scene:"luermen", panoramaUrl:"luermen_landing_1661.jpg"},
+  {name:"臺南孔子廟創建", place:"臺南孔子廟", period:"全臺首學創立", lat:22.9901, lng:120.2041, year:1665, era:"明鄭時期", scene:"confucius", panoramaUrl:"confucius_temple_1665.jpg"},
+  {name:"億載金城建成", place:"二鯤鯓砲臺／億載金城", period:"沈葆楨籌防臺灣海防", lat:22.9885, lng:120.1602, year:1876, era:"清領時期", scene:"golden_castle", panoramaUrl:"eternal_golden_castle_1876.jpg"},
+  {name:"西來庵事件", place:"西來庵／噍吧哖事件歷史場域", period:"噍吧哖事件／余清芳事件", lat:23.1235, lng:120.4620, year:1915, era:"日治時期", scene:"xilai", panoramaUrl:"xilai_temple_incident_1915.jpg"},
+  {name:"烏山頭水庫與嘉南大圳完工", place:"烏山頭水庫／八田與一紀念園區", period:"嘉南平原水利工程", lat:23.2040, lng:120.3610, year:1930, era:"日治時期", scene:"wushantou", panoramaUrl:"wushantou_reservoir_1930.jpg"},
+  {name:"林百貨開幕", place:"林百貨／末廣町", period:"臺南現代都市文化", lat:22.9913, lng:120.2026, year:1932, era:"日治時期", scene:"hayashi", panoramaUrl:"hayashi_department_store_1932.jpg"},
 ];
 
 /* --- 各場景的調色（示意用，之後換成真全景圖） --- */
@@ -598,14 +601,24 @@ const nextButton=document.getElementById("next");
 function loadRound(){
   const r=ROUNDS[idx];truth=r;guess=null;locked=false;lon=Math.random()*360;lat=0;
   autoExpandedMap=false;
+  const hintEl=document.getElementById("hint");
+  hintEl.classList.remove("error");
+  hintEl.textContent=`載入題目: ${r.name}`;
   document.body.classList.remove("round-end","round-end-pano");
   roundToggle.classList.remove("show");
   nextButton.classList.remove("show");
   roundToggle.textContent="⌾";
   roundToggle.title="顯示全景";
   roundToggle.setAttribute("aria-label","顯示全景");
-  textureLoader.load(r.panoramaUrl,applyPanoramaTexture,
-    undefined,()=>{mat.map=generateSceneTexture("pagoda");mat.needsUpdate=true;});
+  textureLoader.load(r.panoramaUrl,tex=>{
+    applyPanoramaTexture(tex);
+    hintEl.classList.remove("error");
+    hintEl.textContent="拖曳環顧四周 — 你在哪裡,又在哪個年代?";
+  },undefined,()=>{
+    hintEl.classList.add("error");
+    hintEl.textContent=`全景圖片載入失敗: ${r.panoramaUrl}。請確認 GitHub 根目錄有這 7 張 .jpg，且檔名完全相同。`;
+    document.getElementById("submit").disabled=true;
+  });
   document.getElementById("st-round").textContent=`${idx+1} / ${ROUNDS.length}`;
   document.getElementById("c-pin").textContent="未標定";
   document.getElementById("c-ll").textContent="";
