@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>ChronoGuess — 時空全景小遊戲原型</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://a.basemaps.cartocdn.com">
+<link rel="preconnect" href="https://b.basemaps.cartocdn.com">
+<link rel="preconnect" href="https://c.basemaps.cartocdn.com">
+<link rel="preconnect" href="https://d.basemaps.cartocdn.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<style>
+  :root{
+    --ink:#0e1a26;
+    --ink-2:#15283a;
+    --parch:#ece0c4;
+    --parch-2:#dccba3;
+    --parch-line:#bfa878;
+    --brass:#c8923f;
+    --brass-lo:#9a6c28;
+    --brass-hi:#e6bd72;
+    --crimson:#a5392b;
+    --teal:#2f6b66;
+    --ok:#3f7d4f;
+    --shadow:0 10px 40px rgba(0,0,0,.45);
+    --serif:"Fraunces",Georgia,serif;
+    --mono:"Space Mono",ui-monospace,monospace;
+    --ww-edge:24px;
+    --ww-bottom-row:40px;
+    --ww-map-bottom:114px;
+    --ww-map-width:360px;
+    --ww-map-expanded:720px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;background:var(--ink);color:var(--parch);
+    font-family:var(--serif);-webkit-user-select:none;user-select:none}
+  #pano{position:fixed;inset:0;z-index:0;cursor:grab}
+  body.round-end-pano #pano{z-index:5}
+  body.round-end .topbar,
+  body.round-end .hint{display:none}
+  #pano.grabbing{cursor:grabbing}
+  canvas{display:block}
+
+  /* ---- top bar ---- */
+  .topbar{position:fixed;top:0;left:0;right:0;display:flex;align-items:center;
+    justify-content:space-between;padding:14px 20px;z-index:5;pointer-events:none;
+    background:linear-gradient(180deg,rgba(10,18,28,.78),transparent)}
+  .brand{display:flex;align-items:baseline;gap:10px}
+  .brand b{font-weight:600;font-size:20px;letter-spacing:.5px}
+  .brand span{font-family:var(--mono);font-size:11px;color:var(--brass-hi);letter-spacing:2px;text-transform:uppercase}
+  .stats{display:flex;gap:22px;font-family:var(--mono);font-size:12px;text-align:right}
+  .stats div span{display:block;color:var(--brass-hi);font-size:10px;letter-spacing:1px;margin-bottom:2px}
+  .stats div b{font-weight:700;font-size:16px;color:var(--parch)}
+
+  .hint{position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:4;
+    font-style:italic;font-size:15px;color:var(--parch);opacity:.85;pointer-events:none;
+    text-shadow:0 2px 8px rgba(0,0,0,.7)}
+
+  /* ---- guess instrument ---- */
+  .panel{position:fixed;right:var(--ww-edge);bottom:var(--ww-map-bottom);width:var(--ww-map-width);
+    max-width:calc(100vw - (var(--ww-edge) * 2));aspect-ratio:4/3;height:auto;z-index:6;
+    color:#202122;border-radius:22px;overflow:hidden;border:1px solid rgba(255,255,255,.68);
+    background:rgba(255,255,255,.88);opacity:.72;box-shadow:0 20px 48px rgba(18,27,42,.18);
+    backdrop-filter:blur(22px) saturate(150%);
+    transition:width .16s ease,opacity .16s ease,transform .16s ease}
+  .panel.tucked{transform:translateY(calc(100% - 46px))}
+  .panel-grip{display:flex;align-items:center;justify-content:space-between;
+    padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--parch-line)}
+  .panel-grip .lbl{font-family:var(--mono);font-size:11px;letter-spacing:2px;
+    text-transform:uppercase;color:var(--brass-lo)}
+  .panel-grip .chev{font-family:var(--mono);color:var(--brass-lo);font-size:14px}
+  .panel-body{height:100%;padding:0}
+  .mapwrap{position:relative;width:100%;height:100%;border:0;border-radius:inherit;
+    overflow:hidden;background:#cdbf9c;aspect-ratio:auto}
+  #map{width:100%;height:100%;display:block;cursor:crosshair;background:#cdbf9c}
+  #map .leaflet-control-attribution{font-family:var(--mono);font-size:8px}
+  #map .leaflet-control-zoom a{width:24px;height:24px;line-height:22px;color:#2a2014}
+  #map .soft-map-base{filter:saturate(.72) contrast(.9) brightness(1.04)}
+  #map .soft-map-labels{filter:saturate(.65) contrast(.95) brightness(1.02)}
+  .map-expand{position:absolute;right:8px;top:8px;z-index:500;width:30px;height:30px;
+    border:1px solid rgba(80,60,30,.55);border-radius:3px;background:rgba(236,224,196,.92);
+    color:#2a2014;font-family:var(--mono);font-size:17px;line-height:1;cursor:pointer;
+    box-shadow:0 2px 7px rgba(0,0,0,.22)}
+  .map-expand:hover{background:#fff4d6}
+  .panel-grip,
+  .coord{display:none}
+  @media (hover:hover) and (pointer:fine){
+    .panel.map-expanded{width:min(var(--ww-map-expanded),calc(100vw - (var(--ww-edge) * 2)));opacity:1;z-index:7}
+  }
+  .panel.map-expanded .mapwrap{aspect-ratio:auto;height:100%}
+  .panel.result-map{inset:0;width:auto;max-width:none;display:flex;flex-direction:column;transform:none;
+    z-index:4;aspect-ratio:auto;background:#cdbf9c;border:0;border-radius:0;box-shadow:none;opacity:1;backdrop-filter:none}
+  .panel.result-map .panel-grip{display:none}
+  .panel.result-map .panel-body{display:flex;flex:1;min-height:0;flex-direction:column;padding:0}
+  .panel.result-map .mapwrap{flex:1;min-height:100vh;height:100%;aspect-ratio:auto;border:0;border-radius:0}
+  .panel.result-map .coord,
+  .panel.result-map .yearrow,
+  .panel.result-map #submit,
+  .panel.result-map .map-expand{display:none}
+  body.round-end-pano .panel.result-map{opacity:0;pointer-events:none}
+  .coord{font-family:var(--mono);font-size:11px;color:#5a4a2c;margin-top:8px;justify-content:space-between}
+  .yearrow{margin-top:12px}
+  .yearrow label{font-family:var(--mono);font-size:11px;letter-spacing:1px;
+    text-transform:uppercase;color:var(--brass-lo);display:flex;justify-content:space-between;align-items:baseline}
+  .yearrow label .yv{font-size:18px;color:#2a2014;letter-spacing:0}
+  input[type=range]{-webkit-appearance:none;width:100%;height:3px;margin:12px 0 4px;
+    background:var(--parch-line);border-radius:2px;outline:none}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;
+    border-radius:50%;background:var(--brass);border:2px solid #6b4a18;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+  input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;
+    background:var(--brass);border:2px solid #6b4a18;cursor:pointer}
+  .scale{display:flex;justify-content:space-between;font-family:var(--mono);
+    font-size:9px;color:#7a6840;margin-top:-2px}
+  .yearrow{position:fixed;left:50%;bottom:var(--ww-bottom-row);z-index:6;
+    width:min(540px,calc(100vw - 460px));margin:0;padding:12px 18px 10px;border:1px solid rgba(255,255,255,.68);
+    border-radius:999px;background:rgba(255,255,255,.9);box-shadow:0 2px 10px rgba(0,0,0,.12);
+    backdrop-filter:blur(16px);transform:translateX(-50%)}
+  .btn{margin-top:14px;width:100%;padding:12px;border:none;border-radius:4px;
+    font-family:var(--mono);font-size:13px;letter-spacing:2px;text-transform:uppercase;
+    cursor:pointer;background:var(--ink);color:var(--parch);transition:background .2s}
+  .btn:hover{background:var(--ink-2)}
+  .btn:disabled{opacity:.72;cursor:default}
+  .btn.go{background:var(--brass);color:#241803;font-weight:700}
+  .btn.go:hover{background:var(--brass-hi)}
+  #submit{position:fixed;right:var(--ww-edge);bottom:var(--ww-bottom-row);z-index:6;
+    width:auto;min-width:152px;min-height:62px;margin:0;padding:0 24px;border:1px solid #a2a9b1;
+    border-radius:999px;background:rgba(255,255,255,.92);color:#202122;box-shadow:0 2px 10px rgba(0,0,0,.12),inset 0 1px 0 rgba(255,255,255,.95);
+    font-family:var(--serif);font-size:30px;font-weight:400;letter-spacing:0;text-transform:none;backdrop-filter:blur(8px)}
+  #submit:not(:disabled):hover{background:#f8f9fa}
+  body.round-end #submit,
+  body.round-end .yearrow{display:none}
+
+  /* ---- result ---- */
+  .result{position:fixed;inset:0;z-index:8;display:none;align-items:center;justify-content:center;
+    background:rgba(8,14,22,.42);backdrop-filter:blur(2px);pointer-events:none}
+  .result.show{display:flex;align-items:flex-start;justify-content:flex-end;padding:var(--ww-edge);
+    background:transparent;backdrop-filter:none}
+  .result.final-mode{justify-content:center;background:rgba(8,14,22,.42);backdrop-filter:blur(2px)}
+  .card{width:min(580px,calc(100vw - (var(--ww-edge) * 2)));max-width:calc(100vw - 32px);background:rgba(255,255,255,.94);color:#202122;
+    border-radius:28px;box-shadow:0 14px 36px rgba(0,0,0,.16),inset 0 1px 0 rgba(255,255,255,.96);
+    border:1px solid #a2a9b1;overflow:hidden;pointer-events:auto;backdrop-filter:blur(8px);
+    max-height:calc(100vh - 36px);overflow-y:auto}
+  .card-h{padding:18px 22px 12px;border-bottom:1px solid var(--parch-line)}
+  .card-h .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--brass-lo)}
+  .card-h h2{margin:4px 0 0;font-weight:600;font-size:24px}
+  .card-h .real{font-family:var(--mono);font-size:12px;color:#6b5732;margin-top:6px}
+  .result-list{display:grid;gap:10px;padding:18px 22px 4px}
+  .result-row{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:54px;
+    padding:10px 14px;border:1px solid rgba(90,74,44,.25);border-radius:6px;background:rgba(255,255,255,.18);
+    font-family:var(--mono)}
+  .result-row span{font-size:18px;color:#5a4a2c}
+  .result-row strong{font-size:23px;color:#241803;text-align:right}
+  .result-row.total strong{color:var(--teal)}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--parch-line)}
+  .cell{background:var(--parch);padding:14px 18px}
+  .cell .k{font-family:var(--mono);font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--brass-lo)}
+  .cell .v{font-family:var(--mono);font-size:22px;font-weight:700;margin-top:4px}
+  .scorebar{padding:16px 22px;display:flex;align-items:center;justify-content:space-between}
+  .scorebar .pts{font-family:var(--mono);font-size:28px;font-weight:700;color:var(--teal)}
+  .scorebar .pts small{font-size:13px;color:#6b5732;font-weight:400}
+  .card .btn{margin:0 22px 20px;width:calc(100% - 44px)}
+  .result-next{position:fixed;right:var(--ww-edge);bottom:var(--ww-bottom-row);z-index:9;display:none;
+    width:auto;min-width:152px;min-height:62px;margin:0;padding:0 24px;border:1px solid #a2a9b1;border-radius:999px;
+    background:rgba(255,255,255,.92);color:#202122;box-shadow:0 2px 10px rgba(0,0,0,.12),inset 0 1px 0 rgba(255,255,255,.95);
+    font-family:var(--serif);font-size:30px;font-weight:400;letter-spacing:0;text-transform:none;backdrop-filter:blur(8px)}
+  .result-next.show{display:block}
+  .round-toggle{position:fixed;right:calc(var(--ww-edge) + 164px);bottom:var(--ww-bottom-row);z-index:9;
+    display:none;align-items:center;justify-content:center;width:62px;height:62px;border:1px solid #a2a9b1;border-radius:50%;
+    background:rgba(255,255,255,.92);color:#202122;box-shadow:0 2px 10px rgba(0,0,0,.12),inset 0 1px 0 rgba(255,255,255,.95);
+    font-size:26px;line-height:1;cursor:pointer;backdrop-filter:blur(8px)}
+  .round-toggle.show{display:flex}
+  .round-toggle:hover{background:#f8f9fa}
+  .result-note{padding:12px 22px 0;font-family:var(--mono);font-size:12px;line-height:1.5;color:#5a4a2c}
+
+  .final{text-align:center;padding:26px 22px}
+  .final h2{font-weight:600;font-size:28px;margin:0 0 6px}
+  .final .big{font-family:var(--mono);font-size:46px;font-weight:700;color:var(--teal);margin:10px 0}
+  .final p{font-style:italic;color:#5a4a2c;margin:0 0 4px;font-size:15px}
+
+  .swatch{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle}
+  @media (max-width:900px){
+    .result.show{align-items:flex-end;justify-content:center;padding:0 10px 10px;
+      background:linear-gradient(180deg,rgba(8,14,22,0) 0%,rgba(8,14,22,.42) 70%)}
+    .result.show .card{width:min(560px,calc(100vw - 20px));max-height:278px}
+    .result-row span{font-size:15px}
+    .result-row strong{font-size:19px}
+    .panel{right:16px;bottom:90px;width:320px}
+    .yearrow{left:16px;right:184px;bottom:30px;width:auto;transform:none}
+    #submit{right:16px;bottom:30px}
+  }
+  @media (max-width:480px){
+    .stats{gap:14px}
+    .hint{font-size:13px;width:90%;text-align:center}
+    .panel{left:16px;right:16px;width:auto;max-width:none;bottom:102px;opacity:0;visibility:hidden;pointer-events:none;transform:translateY(16px)}
+    .panel.map-expanded{left:16px;right:16px;width:auto;max-width:none;opacity:1;visibility:visible;pointer-events:auto;transform:translateY(0)}
+    .panel.map-expanded .mapwrap{height:50vh}
+    .panel.result-map{inset:0;width:auto;max-width:none}
+    .panel.result-map .mapwrap{height:100%;min-height:100vh}
+    .yearrow{left:16px;right:16px;bottom:108px;width:auto}
+    #submit{right:16px;bottom:30px;min-width:152px}
+    .result-next{right:16px;bottom:30px;min-width:152px}
+    .round-toggle{left:16px;right:auto;bottom:30px}
+  }
+</style>
+</head>
+<body>
+  <div id="pano"></div>
+
+  <div class="topbar">
+    <div class="brand"><b>ChronoGuess</b><span>field log</span></div>
+    <div class="stats">
+      <div><span>Round</span><b id="st-round">1 / 5</b></div>
+      <div><span>Total</span><b id="st-total">0</b></div>
+    </div>
+  </div>
+
+  <div class="hint" id="hint">拖曳環顧四周 — 你在哪裡,又在哪個年代?</div>
+
+  <div class="panel" id="panel">
+    <div class="panel-grip" id="grip">
+      <span class="lbl">標定座標與年代</span>
+      <span class="chev" id="chev">▾</span>
+    </div>
+    <div class="panel-body">
+      <div class="mapwrap"><div id="map"></div><button class="map-expand" id="map-expand" type="button" title="放大地圖" aria-label="放大地圖">⛶</button></div>
+    </div>
+  </div>
+
+  <div class="coord">
+    <span><span class="swatch" style="background:var(--brass)"></span><span id="c-pin">未標定</span></span>
+    <span id="c-ll"></span>
+  </div>
+  <div class="yearrow">
+    <label>年代<span class="yv" id="yv">1500</span></label>
+    <input type="range" id="year" min="1600" max="2026" value="1900" step="1">
+    <div class="scale"><span>1600</span><span>1813</span><span>2026</span></div>
+  </div>
+  <button class="btn go" id="submit" disabled>提交猜測</button>
+
+  <div class="result" id="result">
+    <div class="card" id="card"></div>
+  </div>
+  <button class="btn go result-next" id="next" type="button">下一題</button>
+  <button class="round-toggle" id="round-toggle" type="button" aria-label="顯示全景" title="顯示全景">⌾</button>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+/* ============================================================
+   ChronoGuess — 時空全景小遊戲原型
+   要接真資料時：把 generateSceneTexture() 換成
+   new THREE.TextureLoader().load(round.panoramaUrl)
+   panoramaUrl 指向你用 AI 生成的 equirectangular 全景圖。
+   ============================================================ */
+
+/* --- 回合資料：真值 = 計分標準答案 --- */
+const ROUNDS = [
+  {name:"熱蘭遮城初建", place:"安平古堡／熱蘭遮城遺址", period:"荷蘭東印度公司在大員設立據點", lat:23.0016, lng:120.1607, year:1624, era:"荷治時期", scene:"fort_zeelandia", panoramaUrl:"assets/panos_hd/fort_zeelandia_1624.jpg"},
+  {name:"鄭成功登陸鹿耳門", place:"鹿耳門水道／台江內海一帶", period:"鄭成功渡臺攻荷", lat:23.0640, lng:120.1290, year:1661, era:"明鄭時期", scene:"luermen", panoramaUrl:"assets/panos_hd/luermen_landing_1661.jpg"},
+  {name:"臺南孔子廟創建", place:"臺南孔子廟", period:"全臺首學創立", lat:22.9901, lng:120.2041, year:1665, era:"明鄭時期", scene:"confucius", panoramaUrl:"assets/panos_hd/confucius_temple_1665.jpg"},
+  {name:"億載金城建成", place:"二鯤鯓砲臺／億載金城", period:"沈葆楨籌防臺灣海防", lat:22.9885, lng:120.1602, year:1876, era:"清領時期", scene:"golden_castle", panoramaUrl:"assets/panos_hd/eternal_golden_castle_1876.jpg"},
+  {name:"西來庵事件", place:"西來庵／噍吧哖事件歷史場域", period:"噍吧哖事件／余清芳事件", lat:23.1235, lng:120.4620, year:1915, era:"日治時期", scene:"xilai", panoramaUrl:"assets/panos_hd/xilai_temple_incident_1915.jpg"},
+  {name:"烏山頭水庫與嘉南大圳完工", place:"烏山頭水庫／八田與一紀念園區", period:"嘉南平原水利工程", lat:23.2040, lng:120.3610, year:1930, era:"日治時期", scene:"wushantou", panoramaUrl:"assets/panos_hd/wushantou_reservoir_1930.jpg"},
+  {name:"林百貨開幕", place:"林百貨／末廣町", period:"臺南現代都市文化", lat:22.9913, lng:120.2026, year:1932, era:"日治時期", scene:"hayashi", panoramaUrl:"assets/panos_hd/hayashi_department_store_1932.jpg"},
+];
+
+/* --- 各場景的調色（示意用，之後換成真全景圖） --- */
+const PALETTES = {
+  pyramids:{skyTop:"#e8c98a",skyHor:"#f3dcab",gNear:"#c79a5b",gFar:"#d8b173",sil:"#7c5a32",sun:"#fff4d6",sunX:.7,night:false},
+  classical:{skyTop:"#9fc0d8",skyHor:"#e6dcc4",gNear:"#9aa472",gFar:"#bcb98c",sil:"#5b5036",sun:"#fffbe9",sunX:.3,night:false},
+  castle:{skyTop:"#caa56a",skyHor:"#e7c98e",gNear:"#5f6a47",gFar:"#8a8a5e",sil:"#33301f",sun:"#ffe6b0",sunX:.85,night:false},
+  pagoda:{skyTop:"#d99a86",skyHor:"#f0cdb0",gNear:"#7f8a6a",gFar:"#a9ac86",sil:"#3a2f2a",sun:"#ffe3cf",sunX:.2,night:false},
+  skyline:{skyTop:"#10243a",skyHor:"#27435f",gNear:"#16202c",gFar:"#22303f",sil:"#0a1119",sun:null,night:true},
+};
+
+/* ---------- 1. 程式生成 equirectangular 全景貼圖 ---------- */
+function generateSceneTexture(scene){
+  const W=2048,H=1024,hor=Math.round(H*0.52);
+  const c=document.createElement("canvas");c.width=W;c.height=H;
+  const x=c.getContext("2d");const p=PALETTES[scene];
+
+  // 天空
+  let sky=x.createLinearGradient(0,0,0,hor);
+  sky.addColorStop(0,p.skyTop);sky.addColorStop(1,p.skyHor);
+  x.fillStyle=sky;x.fillRect(0,0,W,hor);
+  // 地面
+  let gnd=x.createLinearGradient(0,hor,0,H);
+  gnd.addColorStop(0,p.gFar);gnd.addColorStop(1,p.gNear);
+  x.fillStyle=gnd;x.fillRect(0,hor,W,H-hor);
+
+  if(p.night){ // 星空
+    x.fillStyle="rgba(255,255,255,.8)";
+    for(let i=0;i<260;i++){const sx=Math.random()*W,sy=Math.random()*hor*0.9;
+      x.globalAlpha=Math.random()*0.8+0.2;x.fillRect(sx,sy,Math.random()<.1?2:1,1);}
+    x.globalAlpha=1;
+  }
+  if(p.sun){ // 太陽 / 光源
+    const sx=p.sunX*W,sy=hor-150,r=70;
+    const g=x.createRadialGradient(sx,sy,0,sx,sy,r*3);
+    g.addColorStop(0,p.sun);g.addColorStop(.3,p.sun);g.addColorStop(1,"rgba(255,255,255,0)");
+    x.fillStyle=g;x.beginPath();x.arc(sx,sy,r*3,0,7);x.fill();
+  }
+
+  // 剪影：沿地平線重複擺放 + 左右環繞補繪（確保 360° 接合）
+  const units=8;
+  for(let i=0;i<units;i++){
+    const bx=(i+0.5)*(W/units)+(Math.sin(i*2.3)*40);
+    const s=0.8+((i*37)%5)/8;
+    [-W,0,W].forEach(off=>drawUnit(x,bx+off,hor,s,p.sil,scene,i));
+  }
+  // 地平線薄霧
+  let haze=x.createLinearGradient(0,hor-40,0,hor+30);
+  haze.addColorStop(0,"rgba(255,255,255,0)");haze.addColorStop(1,p.night?"rgba(40,67,95,.5)":"rgba(255,250,235,.55)");
+  x.fillStyle=haze;x.fillRect(0,hor-40,W,70);
+
+  const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;return t;
+}
+
+function drawUnit(x,cx,baseY,s,col,scene,seed){
+  x.save();x.fillStyle=col;
+  if(scene==="pyramids"){
+    const w=170*s,h=130*s;
+    x.beginPath();x.moveTo(cx-w,baseY);x.lineTo(cx,baseY-h);x.lineTo(cx+w,baseY);x.closePath();x.fill();
+    if(seed%2===0){const w2=90*s,h2=72*s;x.beginPath();
+      x.moveTo(cx+w*0.4,baseY);x.lineTo(cx+w*0.4+w2,baseY-h2);x.lineTo(cx+w*0.4+2*w2,baseY);x.closePath();x.fill();}
+  }else if(scene==="classical"){
+    const w=150*s,h=90*s,cols=6;
+    x.fillRect(cx-w,baseY-12*s,2*w,12*s);            // 基座
+    for(let i=0;i<cols;i++){const colx=cx-w+10*s+i*((2*w-20*s)/(cols-1));
+      x.fillRect(colx-5*s,baseY-h,10*s,h-12*s);}     // 柱
+    x.beginPath();x.moveTo(cx-w-8*s,baseY-h);x.lineTo(cx,baseY-h-46*s);x.lineTo(cx+w+8*s,baseY-h);x.closePath();x.fill(); // 三角楣
+  }else if(scene==="castle"){
+    const w=130*s,h=95*s;
+    x.fillRect(cx-w,baseY-h,2*w,h);                  // 城牆
+    for(let i=0;i<7;i++){x.fillRect(cx-w+i*(2*w/7),baseY-h-14*s,(2*w/7)*0.55,14*s);} // 雉堞
+    const tw=34*s,th=160*s;                          // 塔
+    x.fillRect(cx-tw/2,baseY-th,tw,th);
+    x.beginPath();x.moveTo(cx-tw/2-6*s,baseY-th);x.lineTo(cx,baseY-th-34*s);x.lineTo(cx+tw/2+6*s,baseY-th);x.closePath();x.fill();
+  }else if(scene==="pagoda"){
+    const tiers=4;let tw=150*s,ty=baseY;
+    x.fillRect(cx-14*s,baseY-150*s,28*s,150*s);      // 主體
+    for(let i=0;i<tiers;i++){                        // 層層屋簷
+      const ww=tw*(1-i*0.18);ty=baseY-40*s-i*38*s;
+      x.beginPath();x.moveTo(cx-ww/2,ty);x.quadraticCurveTo(cx,ty-26*s,cx+ww/2,ty);
+      x.lineTo(cx+ww/2-14*s,ty);x.quadraticCurveTo(cx,ty-12*s,cx-ww/2+14*s,ty);x.closePath();x.fill();
+    }
+    x.fillRect(cx-2*s,ty-30*s,4*s,30*s);             // 塔尖
+  }else if(scene==="skyline"){
+    let gx=cx-200*s;
+    for(let i=0;i<7;i++){const bw=(26+((i*53)%34))*s,bh=(90+((i*71)%170))*s;
+      x.fillRect(gx,baseY-bh,bw,bh);
+      x.fillStyle="rgba(255,214,140,.55)";          // 窗光
+      for(let wy=baseY-bh+8;wy<baseY-8;wy+=14*s)for(let wx=gx+4;wx<gx+bw-4;wx+=10*s)
+        if(Math.random()<.4)x.fillRect(wx,wy,4*s,6*s);
+      x.fillStyle=col;gx+=bw+16*s;}
+  }
+  x.restore();
+}
+
+/* ---------- 2. Three.js 全景檢視器 ---------- */
+const host=document.getElementById("pano");
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2.5));
+renderer.setSize(innerWidth,innerHeight);host.appendChild(renderer.domElement);
+const scene3=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(72,innerWidth/innerHeight,1,1100);
+const geo=new THREE.SphereGeometry(500,96,64);geo.scale(-1,1,1);
+const mat=new THREE.MeshBasicMaterial();
+const sphere=new THREE.Mesh(geo,mat);scene3.add(sphere);
+const textureLoader=new THREE.TextureLoader();
+const maxAnisotropy=renderer.capabilities.getMaxAnisotropy();
+function applyPanoramaTexture(tex){
+  tex.colorSpace=THREE.SRGBColorSpace;
+  tex.anisotropy=maxAnisotropy;
+  tex.generateMipmaps=true;
+  tex.minFilter=THREE.LinearMipmapLinearFilter;
+  tex.magFilter=THREE.LinearFilter;
+  mat.map=tex;
+  mat.needsUpdate=true;
+}
+
+let lon=0,lat=0,down=false,px=0,py=0,plon=0,plat=0;
+const el=renderer.domElement;
+function start(e){down=true;host.classList.add("grabbing");const t=e.touches?e.touches[0]:e;
+  px=t.clientX;py=t.clientY;plon=lon;plat=lat;}
+function move(e){if(!down)return;const t=e.touches?e.touches[0]:e;
+  lon=plon-(t.clientX-px)*0.16;lat=Math.max(-85,Math.min(85,plat+(t.clientY-py)*0.16));}
+function end(){down=false;host.classList.remove("grabbing");}
+el.addEventListener("mousedown",start);addEventListener("mousemove",move);addEventListener("mouseup",end);
+el.addEventListener("touchstart",start,{passive:true});addEventListener("touchmove",move,{passive:true});addEventListener("touchend",end);
+addEventListener("resize",()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+
+const tgt=new THREE.Vector3();
+(function loop(){requestAnimationFrame(loop);
+  const phi=THREE.MathUtils.degToRad(90-lat),the=THREE.MathUtils.degToRad(lon);
+  tgt.set(500*Math.sin(phi)*Math.cos(the),500*Math.cos(phi),500*Math.sin(phi)*Math.sin(the));
+  camera.lookAt(tgt);renderer.render(scene3,camera);})();
+
+/* ---------- 3. 猜測地圖：台南真實地圖 ---------- */
+const tainanBounds=L.latLngBounds([22.87,119.98],[23.34,120.56]);
+const map=L.map("map",{
+  zoomControl:true,
+  minZoom:9,
+  maxZoom:18,
+  maxBounds:tainanBounds,
+  maxBoundsViscosity:1
+}).setView([23.03,120.24],10);
+const baseTileLayer=L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png",{
+  subdomains:"abcd",
+  maxZoom:18,
+  maxNativeZoom:15,
+  className:"soft-map-base",
+  attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+}).addTo(map);
+const labelTileLayer=L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png",{
+  subdomains:"abcd",
+  maxZoom:18,
+  maxNativeZoom:15,
+  opacity:.55,
+  className:"soft-map-labels"
+}).addTo(map);
+L.rectangle(tainanBounds,{color:"#9a6c28",weight:1,fill:false,opacity:.55,interactive:false}).addTo(map);
+
+const PRELOAD_MAP_ZOOMS=[9,10,11,12,13,14];
+const PRELOAD_QUEUE_LIMIT=8;
+const mapPreloadStatus={zooms:PRELOAD_MAP_ZOOMS.slice(),queued:0,requested:0,completed:0,started:false};
+const mapPreloadImages=new Set();
+window.mapPreloadStatus=mapPreloadStatus;
+function tilesForBounds(bounds,zoom){
+  const tileSize=256;
+  const nw=map.project(bounds.getNorthWest(),zoom).divideBy(tileSize).floor();
+  const se=map.project(bounds.getSouthEast(),zoom).divideBy(tileSize).floor();
+  const max=1<<zoom;
+  const tiles=[];
+  for(let x=nw.x;x<=se.x;x++){
+    for(let y=nw.y;y<=se.y;y++){
+      if(y<0||y>=max)continue;
+      tiles.push(L.point((x%max+max)%max,y));
+    }
+  }
+  return tiles;
+}
+function tileUrlForZoom(layer,tile,zoom){
+  const coords=L.extend({},tile,{z:zoom});
+  const data=L.extend({
+    r:L.Browser.retina?"@2x":"",
+    s:layer._getSubdomain?layer._getSubdomain(coords):"",
+    x:tile.x,
+    y:tile.y,
+    z:zoom
+  },layer.options);
+  return L.Util.template(layer._url,data);
+}
+function preloadTainanTiles(){
+  const layers=[baseTileLayer,labelTileLayer];
+  const queue=[];
+  PRELOAD_MAP_ZOOMS.forEach(zoom=>{
+    tilesForBounds(tainanBounds,zoom).forEach(tile=>{
+      layers.forEach(layer=>queue.push(tileUrlForZoom(layer,tile,zoom)));
+    });
+  });
+  mapPreloadStatus.queued=queue.length;
+  mapPreloadStatus.started=true;
+  let index=0,active=0;
+  function pump(deadline){
+    const timeLeft=()=>deadline&&typeof deadline.timeRemaining==="function"?deadline.timeRemaining():16;
+    while(active<PRELOAD_QUEUE_LIMIT&&index<queue.length&&timeLeft()>4){
+      active++;
+      const img=new Image();
+      img.decoding="async";
+      mapPreloadImages.add(img);
+      mapPreloadStatus.requested++;
+      img.onload=img.onerror=()=>{mapPreloadImages.delete(img);active--;mapPreloadStatus.completed++;schedulePump();};
+      img.src=queue[index++];
+    }
+  }
+  function schedulePump(){
+    if(index>=queue.length&&active===0)return;
+    if("requestIdleCallback" in window)requestIdleCallback(pump,{timeout:900});
+    else setTimeout(()=>pump(),45);
+  }
+  schedulePump();
+}
+addEventListener("load",()=>setTimeout(preloadTainanTiles,800),{once:true});
+
+let guess=null,locked=false,truth=null,guessMarker=null,truthMarker=null,answerLine=null;
+const guessIcon=L.divIcon({className:"",html:'<span style="display:block;width:14px;height:14px;border-radius:50%;background:#c8923f;border:2px solid #3a2a10;box-shadow:0 2px 6px rgba(0,0,0,.35)"></span>',iconSize:[18,18],iconAnchor:[9,9]});
+const truthIcon=L.divIcon({className:"",html:'<span style="display:block;width:14px;height:14px;border-radius:50%;background:#a5392b;border:2px solid #3a2a10;box-shadow:0 2px 6px rgba(0,0,0,.35)"></span>',iconSize:[18,18],iconAnchor:[9,9]});
+
+function resetMap(){
+  if(guessMarker){guessMarker.remove();guessMarker=null;}
+  if(truthMarker){truthMarker.remove();truthMarker=null;}
+  if(answerLine){answerLine.remove();answerLine=null;}
+  map.fitBounds(tainanBounds,{animate:false,padding:[10,10]});
+  setTimeout(()=>map.invalidateSize(),80);
+}
+function drawMap(){
+  if(!locked||!truth||!guess)return;
+  truthMarker=L.marker([truth.lat,truth.lng],{icon:truthIcon}).addTo(map);
+  answerLine=L.polyline([[guess.lat,guess.lng],[truth.lat,truth.lng]],{
+    color:"#a5392b",weight:2,dashArray:"6 6",opacity:.85
+  }).addTo(map);
+  map.fitBounds(L.latLngBounds([[guess.lat,guess.lng],[truth.lat,truth.lng]]).pad(.25),{padding:[24,24],animate:true});
+}
+
+map.on("click",e=>{
+  if(locked)return;
+  if(!tainanBounds.contains(e.latlng))return;
+  guess={lat:e.latlng.lat,lng:e.latlng.lng};
+  if(!guessMarker)guessMarker=L.marker([guess.lat,guess.lng],{icon:guessIcon}).addTo(map);
+  else guessMarker.setLatLng([guess.lat,guess.lng]);
+  document.getElementById("c-pin").textContent="已標定";
+  document.getElementById("c-ll").textContent=
+    `${guess.lat.toFixed(4)}°, ${guess.lng.toFixed(4)}°`;
+  document.getElementById("submit").disabled=false;
+  document.getElementById("submit").textContent="提交";
+});
+const panelEl=document.getElementById("panel");
+const mapWrapEl=panelEl.querySelector(".mapwrap");
+const mapExpandBtn=document.getElementById("map-expand");
+let autoExpandedMap=false;
+function fitGuessMap(){
+  map.invalidateSize();
+  if(locked&&guess&&truth)map.fitBounds(L.latLngBounds([[guess.lat,guess.lng],[truth.lat,truth.lng]]).pad(.25),{padding:[24,24],animate:false});
+  else map.fitBounds(tainanBounds,{padding:[10,10],animate:false});
+}
+function setMapExpanded(expanded,{preserveView=false}={}){
+  const p=document.getElementById("panel");
+  if(p.classList.contains("result-map"))return;
+  const keptCenter=preserveView?map.getCenter():null;
+  const keptZoom=preserveView?map.getZoom():null;
+  p.classList.toggle("map-expanded",expanded);
+  mapExpandBtn.textContent=expanded?"×":"⛶";
+  mapExpandBtn.title=expanded?"縮小地圖":"放大地圖";
+  mapExpandBtn.setAttribute("aria-label",mapExpandBtn.title);
+  setTimeout(()=>{
+    map.invalidateSize();
+    if(preserveView&&keptCenter&&Number.isFinite(keptZoom)){
+      map.setView(keptCenter,keptZoom,{animate:false});
+      return;
+    }
+    fitGuessMap();
+  },380);
+}
+mapExpandBtn.addEventListener("click",e=>{
+  e.stopPropagation();
+  autoExpandedMap=false;
+  setMapExpanded(!panelEl.classList.contains("map-expanded"),{preserveView:true});
+});
+mapWrapEl.addEventListener("mouseenter",()=>{
+  if(locked||!window.matchMedia("(hover: hover) and (pointer: fine)").matches)return;
+  if(panelEl.classList.contains("map-expanded"))return;
+  autoExpandedMap=true;
+  setMapExpanded(true,{preserveView:true});
+});
+panelEl.addEventListener("mouseleave",()=>{
+  if(!autoExpandedMap)return;
+  autoExpandedMap=false;
+  setMapExpanded(false,{preserveView:true});
+});
+
+/* ---------- 4. 計分 ---------- */
+function haversine(a,b){const R=6371,r=Math.PI/180;
+  const dLa=(b.lat-a.lat)*r,dLo=(b.lng-a.lng)*r;
+  const s=Math.sin(dLa/2)**2+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dLo/2)**2;
+  return 2*R*Math.asin(Math.sqrt(s));}
+const CURRENT_CALENDAR_YEAR=2026;
+const EARTH_RADIUS_KM=6371;
+const MAX_ROUND_SCORE=5000;
+const LOCATION_SCORE_MAX=2500;
+const TIME_SCORE_MAX=2500;
+const PERFECT_LOCATION_RADIUS_KM=.5;
+const TAINAN_SCORE_MAX_DISTANCE_KM=haversine({lat:22.87,lng:119.98},{lat:23.34,lng:120.56});
+const LOCATION_SCORE_CURVE=3;
+function clampScore(score){return Math.min(MAX_ROUND_SCORE,Math.max(0,Number.isFinite(score)?score:0));}
+function scoreLocation(distanceKm){
+  const safe=Math.max(0,Number.isFinite(distanceKm)?distanceKm:TAINAN_SCORE_MAX_DISTANCE_KM);
+  if(safe<=PERFECT_LOCATION_RADIUS_KM)return LOCATION_SCORE_MAX;
+  const normalized=Math.min(1,(safe-PERFECT_LOCATION_RADIUS_KM)/(TAINAN_SCORE_MAX_DISTANCE_KM-PERFECT_LOCATION_RADIUS_KM));
+  return Math.max(0,Math.round(LOCATION_SCORE_MAX*Math.pow(1-normalized,LOCATION_SCORE_CURVE)));
+}
+function scoreHistoricalTime(guessYear,actualYear){
+  const guessed=Number.isFinite(guessYear)?guessYear:actualYear;
+  const actual=Number.isFinite(actualYear)?actualYear:guessed;
+  const actualAge=Math.max(1,CURRENT_CALENDAR_YEAR-actual);
+  const ageErrorRatio=Math.abs(guessed-actual)/actualAge;
+  return Math.max(0,Math.round((TIME_SCORE_MAX*2)/(1+Math.exp(4*ageErrorRatio))));
+}
+function totalScore(locationScore,timeScore){return clampScore(Math.round(clampScore(locationScore)+clampScore(timeScore)));}
+
+/* ---------- 5. 遊戲流程 ---------- */
+let idx=0,total=0;const yearInp=document.getElementById("year");
+const roundToggle=document.getElementById("round-toggle");
+const nextButton=document.getElementById("next");
+function loadRound(){
+  const r=ROUNDS[idx];truth=r;guess=null;locked=false;lon=Math.random()*360;lat=0;
+  autoExpandedMap=false;
+  document.body.classList.remove("round-end","round-end-pano");
+  roundToggle.classList.remove("show");
+  nextButton.classList.remove("show");
+  roundToggle.textContent="⌾";
+  roundToggle.title="顯示全景";
+  roundToggle.setAttribute("aria-label","顯示全景");
+  textureLoader.load(r.panoramaUrl,applyPanoramaTexture,
+    undefined,()=>{mat.map=generateSceneTexture("pagoda");mat.needsUpdate=true;});
+  document.getElementById("st-round").textContent=`${idx+1} / ${ROUNDS.length}`;
+  document.getElementById("c-pin").textContent="未標定";
+  document.getElementById("c-ll").textContent="";
+  document.getElementById("submit").disabled=true;
+  document.getElementById("submit").textContent="在哪裡？";
+  document.getElementById("submit").className="btn go";
+  yearInp.value=1900;document.getElementById("yv").textContent="1900";
+  document.getElementById("result").classList.remove("show","final-mode");
+  const panel=document.getElementById("panel");
+  panel.classList.remove("tucked","result-map","map-expanded");chev.textContent="▾";
+  document.querySelector(".panel-grip .lbl").textContent="標定座標與年代";
+  const expand=document.getElementById("map-expand");
+  expand.textContent="⛶";expand.title="放大地圖";expand.setAttribute("aria-label","放大地圖");
+  resetMap();
+}
+yearInp.addEventListener("input",()=>{const v=+yearInp.value;
+  document.getElementById("yv").textContent=v<0?`${-v} BC`:v;});
+
+document.getElementById("submit").addEventListener("click",()=>{
+  if(locked||!guess)return;locked=true;
+  const dist=haversine(guess,truth);
+  const guessedYear=+yearInp.value;
+  const yErr=Math.abs(guessedYear-truth.year);
+  const dPts=scoreLocation(dist);
+  const yPts=scoreHistoricalTime(guessedYear,truth.year);
+  const pts=totalScore(dPts,yPts);total+=pts;
+  document.getElementById("st-total").textContent=total;
+  drawMap();showResult(dist,yErr,dPts,yPts,pts,guessedYear);
+});
+
+function fmtYear(y){return y<0?`${-y} BC`:`AD ${y}`;}
+function fmtKm(km){return km<1?"不到 1 公里":`${Math.round(km).toLocaleString()} 公里`;}
+function focusResultMap(){
+  document.body.classList.add("round-end");
+  document.body.classList.remove("round-end-pano");
+  roundToggle.classList.add("show");
+  roundToggle.textContent="⌾";
+  roundToggle.title="顯示全景";
+  roundToggle.setAttribute("aria-label","顯示全景");
+  const panel=document.getElementById("panel");
+  panel.classList.remove("tucked");
+  panel.classList.add("result-map","map-expanded");
+  document.querySelector(".panel-grip .lbl").textContent="結算地圖";
+  chev.textContent="▾";
+  setTimeout(()=>{
+    map.invalidateSize();
+    if(guess&&truth){
+      const narrow=window.matchMedia("(max-width:900px)").matches;
+      map.fitBounds(L.latLngBounds([[guess.lat,guess.lng],[truth.lat,truth.lng]]).pad(.35),{
+        paddingTopLeft:narrow?[28,80]:[32,80],
+        paddingBottomRight:narrow?[28,310]:[470,32],
+        animate:false
+      });
+    }
+  },380);
+}
+function showResult(dist,yErr,dPts,yPts,pts,guessedYear){
+  const r=truth,last=idx===ROUNDS.length-1;
+  focusResultMap();
+  document.getElementById("card").innerHTML=`
+    <div class="card-h">
+      <div class="eyebrow">${r.era}</div>
+      <h2>${r.name}</h2>
+      <div class="real">${r.place} · ${fmtYear(r.year)}</div>
+    </div>
+    <div class="result-list">
+      <div class="result-row"><span>距離誤差：</span><strong>${fmtKm(dist)}</strong></div>
+      <div class="result-row"><span>年代誤差：</span><strong>${yErr.toLocaleString()} 年</strong></div>
+      <div class="result-row total"><span>總分：</span><strong>${pts.toLocaleString()}</strong></div>
+    </div>
+    <div class="result-note">
+      <b>內容:</b> ${r.period}<br>
+      <b>地點:</b> 你猜的位置距離實際地點相差 ${fmtKm(dist)}。地圖上黃點是你的猜測,紅點是答案,虛線代表兩者距離。<br>
+      <b>時間:</b> 你猜 ${fmtYear(guessedYear)},答案是 ${fmtYear(r.year)},相差 ${yErr} 年。<br>
+      <b>分數:</b> 地點 ${dPts} / 2500（以台南範圍約 ${Math.round(TAINAN_SCORE_MAX_DISTANCE_KM)} 公里為尺度）,時間 ${yPts} / 2500,本題 ${pts} / 5000。
+    </div>
+    <div class="scorebar"><span class="k" style="font-family:var(--mono);font-size:11px;letter-spacing:1px;color:var(--brass-lo)">累積</span>
+      <span class="pts">${total.toLocaleString()} <small>/ ${(ROUNDS.length*MAX_ROUND_SCORE).toLocaleString()}</small></span></div>`;
+  document.getElementById("result").classList.remove("final-mode");
+  document.getElementById("result").classList.add("show");
+  nextButton.textContent=last?"看最終成績":"下一題";
+  nextButton.classList.add("show");
+  nextButton.onclick=()=>{
+    if(last)return finalScreen();
+    idx++;loadRound();
+  };
+}
+function finalScreen(){
+  document.body.classList.remove("round-end","round-end-pano");
+  roundToggle.classList.remove("show");
+  nextButton.classList.remove("show");
+  const panel=document.getElementById("panel");
+  panel.classList.remove("result-map","map-expanded");
+  document.querySelector(".panel-grip .lbl").textContent="標定座標與年代";
+  const expand=document.getElementById("map-expand");
+  expand.textContent="⛶";expand.title="放大地圖";expand.setAttribute("aria-label","放大地圖");
+  const max=ROUNDS.length*MAX_ROUND_SCORE;
+  let verdict="時空旅人";
+  const pct=total/max;
+  if(pct>0.8)verdict="時空旅人 · 大師級";
+  else if(pct>0.55)verdict="老練的領航員";
+  else if(pct>0.3)verdict="見習製圖師";
+  else verdict="初次穿越者";
+  document.getElementById("card").innerHTML=`
+    <div class="final">
+      <div class="eyebrow" style="font-family:var(--mono);font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--brass-lo)">航行結束</div>
+      <h2>${verdict}</h2>
+      <div class="big">${total.toLocaleString()}</div>
+      <p>滿分 ${max.toLocaleString()}</p>
+      <p style="margin-top:10px">「我們是宇宙認識自己的方式。」— Carl Sagan</p>
+      <button class="btn go" id="again" style="margin-top:18px">再玩一次</button>
+    </div>`;
+  document.getElementById("result").classList.add("show","final-mode");
+  document.getElementById("again").onclick=()=>{idx=0;total=0;
+    document.getElementById("st-total").textContent=0;loadRound();};
+}
+
+roundToggle.addEventListener("click",()=>{
+  if(!locked)return;
+  const showingPano=document.body.classList.toggle("round-end-pano");
+  roundToggle.textContent=showingPano?"▣":"⌾";
+  roundToggle.title=showingPano?"顯示地圖":"顯示全景";
+  roundToggle.setAttribute("aria-label",roundToggle.title);
+  setTimeout(()=>{
+    if(!showingPano){
+      map.invalidateSize();
+      if(guess&&truth){
+        const narrow=window.matchMedia("(max-width:900px)").matches;
+        map.fitBounds(L.latLngBounds([[guess.lat,guess.lng],[truth.lat,truth.lng]]).pad(.35),{
+          paddingTopLeft:narrow?[28,80]:[32,80],
+          paddingBottomRight:narrow?[28,310]:[470,32],
+          animate:false
+        });
+      }
+    }
+  },80);
+});
+
+/* 收合面板 */
+const chev=document.getElementById("chev");
+document.getElementById("grip").addEventListener("click",()=>{
+  const p=document.getElementById("panel");
+  if(p.classList.contains("result-map"))return;
+  p.classList.toggle("tucked");
+  chev.textContent=p.classList.contains("tucked")?"▴":"▾";
+  setTimeout(()=>map.invalidateSize(),380);
+});
+
+loadRound();
+</script>
+</body>
+</html>
